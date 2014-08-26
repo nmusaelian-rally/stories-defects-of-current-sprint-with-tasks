@@ -1,0 +1,149 @@
+Ext.define('CustomApp', {
+    extend: 'Rally.app.App',
+    componentCls: 'app',
+    items:{ html:'<a href="https://help.rallydev.com/apps/2.0rc3/doc/">App SDK 2.0rc3 Docs</a>'},
+  
+     launch: function() {
+        var that = this;
+        var today = new Date().toISOString();
+        Ext.create('Rally.data.wsapi.artifact.Store', {
+            models: ['UserStory','Defect'],
+            fetch: ['Owner', 'FormattedID','Name','ScheduleState','c_MyKB','TaskEstimateTotal','TaskRemainingTotal','Tasks'],
+            autoLoad: true,
+            filters : [
+                {
+                property: 'Iteration.StartDate',
+                operator: '<=',
+                value: today
+            },
+            {
+                property: 'Iteration.EndDate',
+                operator: '>=',
+                value: today
+            }
+            ],
+            listeners: {
+                load: this._onDataLoaded,
+                scope: this
+            }
+        });
+     },
+    
+    _onDataLoaded: function(store, data){
+        var artifacts = [];
+        var pendingtasks = data.length;
+        _.each(data, function(artifact) {
+                var a  = {
+                        FormattedID: artifact.get('FormattedID'),
+                        Name: artifact.get('Name'),
+                        Owner:  (artifact.get('Owner') && artifact.get('Owner')._refObjectName) || 'None',
+                        _ref: artifact.get("_ref"),
+                        ScheduleState: artifact.get('ScheduleState'),
+                        MyKB: artifact.get('c_MyKB'),
+                        TaskCount: artifact.get('Tasks').Count,
+                        Tasks: [],
+                        TaskEstimateTotal: artifact.get('TaskEstimateTotal'),
+                        TaskRemainingTotal: artifact.get('TaskRemainingTotal')
+                    };
+                    
+                    var tasks = artifact.getCollection('Tasks', {fetch: ['FormattedID','Owner','State','Estimate', 'ToDo']});
+                   tasks.load({
+                        callback: function(records, operation, success){
+                            _.each(records, function(task){
+                                    a.Tasks.push({
+                                    _ref: task.get('_ref'),
+                                    FormattedID: task.get('FormattedID'),
+                                    State: task.get('State'),
+                                    Estimate: task.get('Estimate'),
+                                    ToDo: task.get('ToDo'),
+                                    Owner:  (task.get('Owner') && task.get('Owner')._refObjectName) || 'None'
+                                            });
+                            }, this);
+                            
+                            --pendingtasks;
+                            if (pendingtasks === 0) {
+                                this._createGrid(artifacts);
+                            }
+                        },
+                        scope: this
+                    });
+                    artifacts.push(a);
+        }, this);
+    },
+    
+    _createGrid: function(artifacts) {
+         console.log("create grid");
+        var store = Ext.create('Rally.data.custom.Store', {
+                data: artifacts,
+                pageSize: 100,
+                remoteSort:false
+            });
+        
+         this.add({
+            xtype: 'rallygrid',
+            itemId: 'sgrid',
+            store: store,
+            columnCfgs: [
+                {
+                   text: 'Formatted ID', dataIndex: 'FormattedID', xtype: 'templatecolumn',
+                    tpl: Ext.create('Rally.ui.renderer.template.FormattedIDTemplate')
+                },
+                {
+                    text: 'Name', dataIndex: 'Name'
+                },
+                {
+                    text: 'Owner', dataIndex: 'Owner'
+                },
+                {
+                    text: 'ScheduleState', dataIndex: 'ScheduleState', xtype: 'templatecolumn',
+                        tpl: Ext.create('Rally.ui.renderer.template.ScheduleStateTemplate',
+                            {
+                                states: ['Defined', 'In-Progress', 'Completed', 'Accepted'],
+                                field: {
+                                    name: 'ScheduleState' 
+                                }
+                        })
+                },
+                {
+                    text: 'MyKB', dataIndex: 'MyKB'
+                },
+                {
+                    text: 'Task Count', dataIndex: 'TaskCount'
+                },
+                {
+                    text: 'Task Estimate Total', dataIndex: 'TaskEstimateTotal'
+                },
+                {
+                    text: 'Task Remaining Total', dataIndex: 'TaskRemainingTotal'
+                },
+                {
+                    text: 'Tasks', dataIndex: 'Tasks', minWidth: 150,
+                    renderer: function(value) {
+                        var html = [];
+                        _.each(value, function(task){
+                            html.push('<a href="' + Rally.nav.Manager.getDetailUrl(task) + '">' + task.FormattedID + '</a>' + ' State: ' + task.State + ' Estimate:' + task.Estimate +  ' ToDo:' + task.ToDo);
+                        });
+                        return html.join('</br>');
+                    }
+                },
+                {
+                    text: 'Task Owner', dataIndex: 'Tasks', 
+                    renderer: function(value) {
+                        var html = [];
+                        _.each(value, function(task){
+                            html.push(task.Owner);
+                        });
+                        return html.join('</br></br>');
+                    }
+                }
+            ]
+            
+        });
+    }
+});
+
+
+    
+   
+    
+   
